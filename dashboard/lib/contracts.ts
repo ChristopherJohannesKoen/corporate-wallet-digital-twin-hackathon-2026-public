@@ -633,6 +633,84 @@ export type V31Brief = {
   provider_used: string;
 };
 
+export type ProviderNarrative = {
+  headline: string;
+  situation: string;
+  why_now: string;
+  next_action: string;
+  claims: Array<{ claim_id: string; claim_class: ClaimClass; evidence_ids: string[]; text: string }>;
+  abstentions: string[];
+};
+
+export type ProviderBriefEvaluation = {
+  evaluation_id: string;
+  entity_id: string;
+  entity_name: string;
+  provider: string;
+  canonical_model_id: string;
+  model_resolution: string;
+  execution_status: string;
+  acceptance_status: "ACCEPTED";
+  pack_hash: string;
+  prompt_version: string;
+  schema_version: string;
+  validation_metrics: {
+    schema_compliance: boolean;
+    numeric_preservation: boolean;
+    citation_precision: boolean;
+    abstention_present: boolean;
+    unsupported_critical_claims: number;
+    prompt_injection_successes: number;
+  };
+  accepted_narrative: ProviderNarrative;
+  deterministic_fallback: ProviderNarrative;
+};
+
+export type ClientBriefingNotesResponse = {
+  entity_id: string;
+  as_of: string;
+  notes: Array<{
+    conversation_id: string;
+    deterministic_brief: V31Brief;
+    accepted_provider_brief: ProviderBriefEvaluation | null;
+    provider_evaluations: ProviderBriefEvaluation[];
+    live_provider_status: string;
+  }>;
+  live_evaluation: {
+    evaluation_scope: string;
+    target_runs: number;
+    runs: number;
+    accepted_runs: number;
+    blocked_runs: number;
+    submission_gate_passed: boolean;
+    accepted_providers: string[];
+    accepted_clients: string[];
+    bank_authorized_live_genai: boolean;
+    claim_boundary: string;
+  };
+  claim_boundary: string;
+};
+
+export type SubmissionTruth = {
+  version: string;
+  as_of: string;
+  genai: ClientBriefingNotesResponse["live_evaluation"] & {
+    showcase_briefs: Record<string, ProviderBriefEvaluation>;
+    blocked_evaluations: Array<Record<string, unknown>>;
+  };
+  promotion: {
+    real_state: string;
+    rehearsed_state: string;
+    package_status: string;
+    promotion_machinery_readiness: number;
+    bank_evidence_readiness: number;
+    bank_shadow_authorized: boolean;
+    bank_production_status: string;
+    shadow_rehearsal_days: number;
+    elapsed_bank_shadow_days: number;
+  };
+};
+
 export type V31BusinessTwin = {
   entity_id: string;
   entity_name: string;
@@ -786,4 +864,85 @@ export type WalletOpportunityDetail = {
     conditional_action: string;
   };
   claim_boundary: Record<string, string>;
+};
+
+/**
+ * V3.2 promotion readiness.
+ *
+ * Two scores and no third. `promotion_machinery_readiness` says the apparatus
+ * works; `bank_evidence_readiness` says whether the bank has the evidence.
+ * There is deliberately no combined figure — a composite would let a fully
+ * rehearsed system with no bank evidence read as nearly production-ready, which
+ * is the reading this whole view exists to prevent.
+ */
+export type PromotionProjection = "real-pass" | "rehearsal-pass" | "waiting" | "failed";
+
+export type PromotionGateRow = {
+  gate_id: string;
+  title: string;
+  transition_id: string;
+  severity: "CRITICAL" | "HIGH" | "STANDARD";
+  severity_weight: number;
+  blocking: boolean;
+  requirement: string;
+  consequence_if_failed: string;
+  real_outcome: string;
+  rehearsal_outcome: string;
+  projection: PromotionProjection;
+  evidence_mode: string | null;
+  minimum_real_evidence_mode: string;
+  artifact_sha256: string | null;
+  signature_status: string;
+  signing_key_id: string | null;
+  trust_domain: string | null;
+  owner_role: string;
+  approver_role: string;
+  freshness_days: number | null;
+  expires_at: string | null;
+  what_would_make_real_pass: string;
+  failure_injection_verified: boolean;
+  ber_contribution: number;
+};
+
+export type PromotionReadiness = {
+  fixture_version: string;
+  catalogue_version: string;
+  state_machine_version: string;
+  as_of: string;
+  generated_at: string;
+  summary: {
+    real_state: string;
+    rehearsed_state: string;
+    bank_shadow_authorized: boolean;
+    promotion_machinery_readiness: number;
+    bank_evidence_readiness: number;
+    synthetic_weight_excluded_from_ber: number;
+    pmr_weight_available: number;
+    package_status: string;
+    bank_production_status: string;
+  };
+  states: Array<{ state: string; index: number; real_attained: boolean; rehearsed_attained: boolean }>;
+  transitions: Array<{
+    transition_id: string;
+    gate_count: number;
+    blocking_gate_count: number;
+    real_satisfied: boolean;
+    rehearsal_satisfied: boolean;
+    real_reason_codes: string[];
+    rehearsal_reason_codes: string[];
+    gates: PromotionGateRow[];
+  }>;
+  capabilities: Array<{ capability: string; granted: boolean; refusal_reason: string | null }>;
+  clock: {
+    rehearsal_days_elapsed: number;
+    consecutive_clean_rehearsal_days: number;
+    elapsed_bank_shadow_days: number;
+    incidents_injected: number;
+    last_reset_reason: string | null;
+  };
+  signing: { executed: string[]; not_executed: string[]; real_bank_signing_available: boolean };
+  projection_legend: Record<string, string>;
+  gates_without_failure_injection: string[];
+  event_counts: { by_type: Record<string, number>; by_track: Record<string, number>; total: number };
+  why_no_single_percentage: string;
 };

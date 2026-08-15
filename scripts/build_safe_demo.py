@@ -18,14 +18,20 @@ def run(*args: str) -> None:
 def main() -> None:
     run("scripts/export_v3_contracts.py")
     run("scripts/export_v31_contracts.py")
+    run("scripts/export_v311_wallet_surface.py")
+    run("scripts/export_v32_contracts.py")
+    run("scripts/export_v32_workbench_fixture.py")
     run("-m", "pytest", "-q", "tests")
-    manifest = json.loads((ROOT / "public-mirror-manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (ROOT / "public-mirror-manifest.json").read_text(encoding="utf-8")
+    )
     if manifest["status"] != "PASS":
         raise SystemExit("public mirror manifest is not PASS")
-    # Export scripts create anonymous analytical intermediates. The committed
-    # mirror needs only the rebuilt browser fixtures and contracts.
     shutil.rmtree(ROOT / "outputs", ignore_errors=True)
-    print(json.dumps({"status": "PASS", "version": "3.1.1-safe", "cells": 100}, indent=2))
+    print(json.dumps({
+        "status": "PASS", "version": "3.2.0-safe", "cells": 100,
+        "promotion_mode": "SYNTHETIC_REHEARSAL",
+    }, indent=2))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type {
+  ClientBriefingNotesResponse,
   V31Brief,
   V31BusinessTwin,
   V31Conversation,
@@ -10,12 +11,14 @@ import type {
   V31FundingRoutes,
   V31Graph,
   V31PlanEntry,
+  PromotionGateRow,
+  PromotionReadiness,
   WalletOpportunityDetail,
   WalletPortfolioCell,
   WalletPortfolioProjection,
 } from "@/lib/contracts";
 
-type View = "Wallet portfolio" | "Coverage plan" | "Client twin" | "Governance";
+type View = "Wallet portfolio" | "Coverage plan" | "Client twin" | "Promotion readiness" | "Governance";
 type WalletMetric = "contestable contribution" | "observed activity" | "posterior wallet" | "estimated Syn share" | "contestable gap" | "evidence status";
 
 function money(value: number | null | undefined): string {
@@ -90,10 +93,13 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
   const [selectedId, setSelectedId] = useState("");
   const [conversation, setConversation] = useState<V31Conversation | null>(null);
   const [brief, setBrief] = useState<V31Brief | null>(null);
+  const [briefingNotes, setBriefingNotes] = useState<ClientBriefingNotesResponse | null>(null);
   const [twin, setTwin] = useState<V31BusinessTwin | null>(null);
   const [graph, setGraph] = useState<V31Graph | null>(null);
   const [digest, setDigest] = useState<V31Digest | null>(null);
   const [funding, setFunding] = useState<V31FundingRoutes | null>(null);
+  const [promotion, setPromotion] = useState<PromotionReadiness | null>(null);
+  const [openGateId, setOpenGateId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -102,11 +108,13 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
     Promise.all([
       getJson<WalletPortfolioProjection>(`/api/v3/wallet-portfolio?as_of=${asOf}`),
       getJson<V31DecisionTwin>(`/api/v3/decision-twin?as_of=${asOf}&week_start=${weekStart}`),
+      getJson<PromotionReadiness>(`/api/v3/promotion/readiness?as_of=${asOf}`),
     ])
-      .then(([walletData, data]) => {
+      .then(([walletData, data, promotionData]) => {
         if (!active) return;
         setWallet(walletData);
         setProjection(data);
+        setPromotion(promotionData);
         setSelectedId(data.coverage_plan.entries[0]?.conversation_id ?? data.conversation_summaries[0]?.conversation_id ?? "");
         setWalletOpportunityId(walletData.top_opportunity_ids[0] ?? walletData.cells[0]?.opportunity_id ?? "");
       })
@@ -136,17 +144,19 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
         setConversation(nextConversation);
         setBrief(nextBrief);
         const clientId = nextConversation.entity_id;
-        const [nextTwin, nextGraph, nextDigest, nextFunding] = await Promise.all([
+        const [nextTwin, nextGraph, nextDigest, nextFunding, nextBriefingNotes] = await Promise.all([
           getJson<V31BusinessTwin>(`/api/v3/clients/${clientId}/business-twin?as_of=${asOf}`),
           getJson<V31Graph>(`/api/v3/clients/${clientId}/business-graph?as_of=${asOf}&explainable_only=true`),
           getJson<V31Digest>(`/api/v3/clients/${clientId}/change-digest?since=2026-03-31&as_of=${asOf}`),
           getJson<V31FundingRoutes>(`/api/v3/funding-routes/${clientId}?as_of=${asOf}`),
+          getJson<ClientBriefingNotesResponse>(`/api/v3/clients/${clientId}/briefing-notes?as_of=${asOf}`),
         ]);
         if (!active) return;
         setTwin(nextTwin);
         setGraph(nextGraph);
         setDigest(nextDigest);
         setFunding(nextFunding);
+        setBriefingNotes(nextBriefingNotes);
       })
       .catch((reason: Error) => active && setError(reason.message));
     return () => { active = false; };
@@ -163,6 +173,20 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
   }, [wallet]);
 
   const walletMax = useMemo(() => wallet ? Math.max(...wallet.cells.map((cell) => heatMetricValue(cell, walletMetric)), 1) : 1, [wallet, walletMetric]);
+  const walletProductMax = useMemo(() => {
+    const maxima = new Map<string, number>();
+    if (!wallet) return maxima;
+    wallet.cells.forEach((cell) => maxima.set(cell.product, Math.max(maxima.get(cell.product) ?? 0, heatMetricValue(cell, walletMetric), 1)));
+    return maxima;
+  }, [wallet, walletMetric]);
+
+  function heatRatio(cell: WalletPortfolioCell): number {
+    if (walletMetric === "evidence status") return cell.anchor_activation === "ACTIVATED" ? 1 : .12;
+    const denominator = walletMetric === "contestable contribution"
+      ? walletMax
+      : (walletProductMax.get(cell.product) ?? 1);
+    return Math.max(.06, Math.sqrt(heatMetricValue(cell, walletMetric) / denominator));
+  }
 
   function walletCellLabel(cell: WalletPortfolioCell): string {
     if (walletMetric === "estimated Syn share") return pct(cell.share_interval.median, 1);
@@ -183,14 +207,14 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
   return (
     <div className="dt-shell">
       <header className="dt-masthead">
-        <div className="dt-brand"><span className="dt-brand-mark"><i /><i /><i /></span><div><b>Corporate Wallet</b><small>Digital Twin · V3.1.1</small></div></div>
+        <div className="dt-brand"><span className="dt-brand-mark"><i /><i /><i /></span><div><b>Corporate Wallet</b><small>Digital Twin · V3.2.0</small></div></div>
         <div className="dt-session"><Status tone="demo">Client demonstration</Status><span>As of <b>{asOf}</b></span><span>{viewer}</span></div>
       </header>
 
       <div className="dt-boundary"><b>GOVERNED DEMONSTRATION</b><span>{projection.metadata.watermark}</span><em>{projection.release.bank_production_status}</em></div>
 
       <nav className="dt-nav" aria-label="Decision Twin views">
-        {(["Wallet portfolio", "Coverage plan", "Client twin", "Governance"] as View[]).map((item, index) => (
+        {(["Wallet portfolio", "Coverage plan", "Client twin", "Promotion readiness", "Governance"] as View[]).map((item, index) => (
           <button key={item} onClick={() => setView(item)} className={view === item ? "active" : ""}><span>0{index + 1}</span>{item}</button>
         ))}
       </nav>
@@ -217,13 +241,13 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
                 {walletClients.map((client) => {
                   const cells = wallet.products.map((product) => wallet.cells.find((cell) => cell.entity_id === client.entity_id && cell.product === product)!);
                   return [<div className="dt-heat-client" key={`${client.entity_id}:label`}><b>{client.entity_name}</b><small>{client.sector}</small></div>, ...cells.map((cell) => {
-                    const ratio = walletMetric === "evidence status" ? (cell.anchor_activation === "ACTIVATED" ? 1 : .12) : Math.max(.06, Math.sqrt(heatMetricValue(cell, walletMetric) / walletMax));
+                    const ratio = heatRatio(cell);
                     const active = walletOpportunityId === cell.opportunity_id;
                     return <button key={cell.opportunity_id} className={`dt-heat-cell ${active ? "selected" : ""} ${cell.anchor_activation === "ACTIVATED" ? "anchored" : "prior"}`} onClick={() => setWalletOpportunityId(cell.opportunity_id)} style={{ "--heat": ratio } as React.CSSProperties}><b>{walletCellLabel(cell)}</b><small>{cell.anchor_activation === "ACTIVATED" ? "E1 approved" : "E0 prior-led"}</small></button>;
                   })];
                 })}
               </div>
-              <footer className="dt-heatmap-note">FX is an exposure proxy. Liquidity is a liquidity-flow opportunity proxy. Heterogeneous product quantities are never summed as “banking spend”; only scenario contribution is aggregated.</footer>
+              <footer className="dt-heatmap-note">Scenario contribution uses one portfolio-wide scale. A, T, q and G use relative intensity within each product column. FX is an exposure proxy; Liquidity is a liquidity-flow opportunity proxy. Heterogeneous quantities are never summed as “banking spend”.</footer>
             </article>
 
             <aside className="dt-panel dt-wallet-detail">
@@ -253,7 +277,7 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
       {view === "Coverage plan" && (
         <main className="dt-main">
           <section className="dt-hero">
-            <div><p className="dt-kicker">Monday morning · week of {weekStart}</p><h1>Your five most valuable<br /><em>conversations this week</em></h1></div>
+            <div><p className="dt-kicker">Coverage capacity · week of {weekStart}</p><h1>Priority coverage<br /><em>conversations</em></h1></div>
             <p>{projection.metadata.central_idea}</p>
           </section>
 
@@ -261,7 +285,7 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
             <Metric label="Governed weekly plan" value={`${plan.length}/${projection.coverage_plan.capacity}`} note={`${projection.coverage_plan.solver_status} mixed-integer CVaR solution; no degraded fallback`} />
             <Metric label="Business Twins" value={String(projection.validation.clients)} note="Every client has 12 component records and a change digest" />
             <Metric label="Solution projections" value={String(projection.validation.solution_projections)} note={`${projection.validation.available_solution_estimates} available · ${projection.validation.fail_closed_solution_estimates} fail closed`} />
-            <Metric label="Typed evidence claims" value={projection.evidence_coverage.total_claims.toLocaleString()} note={`${projection.evidence_coverage.approval_counts.APPROVED} approved · ${projection.evidence_coverage.approval_counts.PENDING_REVIEW} awaiting review`} />
+            <Metric label="Governed model / analytical claims" value={projection.evidence_coverage.total_claims.toLocaleString()} note={`82 public source facts: 31 approved · 51 pending SME review`} />
           </section>
 
           <section className="dt-workspace">
@@ -280,6 +304,21 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
                   <div className="dt-brief-block"><span>What</span><p>{brief.what}</p></div>
                   <div className="dt-dual-value"><div><span>Client value</span><b>{money(conversation.client_value.monetised_total?.median)}</b><small>{brief.client_value_statement}</small></div><div><span>Bank value</span><b>{money(conversation.bank_value.direct_contribution?.median)}</b><small>{brief.bank_value_statement}</small></div></div>
                   <div className="dt-question"><span>Highest positive-net-VOI question</span><b>{brief.primary_question ?? "No decision-changing question has positive net VOI."}</b><small>{conversation.next_best_question ? `${money(conversation.next_best_question.net_voi_zar)} net VOI · ${conversation.next_best_question.scenario_draws} common draws` : "Abstained"}</small></div>
+                  {briefingNotes && <div className="dt-provider-proof">
+                    <div><span>Hackathon provider proof</span><b>{briefingNotes.live_evaluation.accepted_runs}/{briefingNotes.live_evaluation.target_runs} accepted</b></div>
+                    <small>{briefingNotes.live_evaluation.accepted_providers.length ? `${briefingNotes.live_evaluation.accepted_providers.map(label).join(" · ")} · all accepted showcase clients` : "Provider evaluation is intentionally absent from the anonymized safe mirror."}</small>
+                    {!briefingNotes.notes[0]?.accepted_provider_brief && briefingNotes.live_evaluation.accepted_clients.length > 0 && <button onClick={() => selectClient(briefingNotes.live_evaluation.accepted_clients[0])}>Open an accepted showcase brief →</button>}
+                  </div>}
+                  {briefingNotes?.notes[0]?.accepted_provider_brief && (() => {
+                    const live = briefingNotes.notes[0].accepted_provider_brief;
+                    return <div className="dt-live-brief">
+                      <div><span>Hackathon external-provider evaluation</span><Status tone="ready">{live.acceptance_status}</Status></div>
+                      <b>{live.provider} · {live.canonical_model_id}</b>
+                      <p>{live.accepted_narrative.headline}</p>
+                      <small>Pack {live.pack_hash.slice(0, 12)}… · schema, numbers, citations and abstention passed · unsupported critical claims {live.validation_metrics.unsupported_critical_claims}</small>
+                      <em>Bank-authorized LIVE_GENAI remains disabled; deterministic fallback is retained beside this result.</em>
+                    </div>;
+                  })()}
                   <button className="dt-link-button" onClick={() => setView("Client twin")}>Open complete client twin →</button>
                 </>
               ) : <p>Loading conversation…</p>}
@@ -355,11 +394,124 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
         </main>
       )}
 
+      {view === "Promotion readiness" && promotion && (
+        <main className="dt-main">
+          {/* Summary strip. Two scores, side by side, never combined — one
+              blended figure is the number a reader would take away instead of
+              the substance, and it would let a fully rehearsed system with no
+              bank evidence read as nearly production-ready. */}
+          <section className="dt-promo-hero">
+            <div>
+              <p className="dt-kicker">Promotion readiness</p>
+              <h1>Bank state <em>{label(promotion.summary.real_state)}</em><br />Rehearsed to <em>{label(promotion.summary.rehearsed_state)}</em></h1>
+              <p className="dt-promo-note">{promotion.why_no_single_percentage}</p>
+            </div>
+            <div className="dt-promo-scores">
+              <article><p className="dt-kicker">Promotion machinery readiness</p><b>{pct(promotion.summary.promotion_machinery_readiness, 0)}</b><span>Rehearsal track. Does the apparatus work?</span></article>
+              <article className="dt-promo-ber"><p className="dt-kicker">Bank evidence readiness</p><b>{pct(promotion.summary.bank_evidence_readiness, 0)}</b><span>Real track. Synthetic evidence counts zero.</span></article>
+            </div>
+          </section>
+
+          <section className="dt-promo-strip">
+            <div><span>BANK_SHADOW_AUTHORIZED</span><Status tone={promotion.summary.bank_shadow_authorized ? "ready" : "blocked"}>{String(promotion.summary.bank_shadow_authorized).toUpperCase()}</Status></div>
+            <div><span>Shadow package</span><Status tone="ready">{label(promotion.summary.package_status)}</Status></div>
+            <div><span>Bank production</span><Status tone="blocked">{promotion.summary.bank_production_status}</Status></div>
+            {/* Always rendered as a pair. The second number is what keeps the
+                first honest: a 30-day accelerated rehearsal is not a month of
+                bank operation. */}
+            <div><span>Rehearsal days</span><b>{promotion.clock.consecutive_clean_rehearsal_days}</b></div>
+            <div><span>Elapsed bank shadow days</span><b className="dt-promo-zero">{promotion.clock.elapsed_bank_shadow_days}</b></div>
+            <div><span>Simulated weight excluded from BER</span><b>{promotion.summary.synthetic_weight_excluded_from_ber} / {promotion.summary.pmr_weight_available}</b></div>
+          </section>
+
+          {/* Five state columns, each showing both tracks. Rendering only the
+              track with something to show would make an empty real track look
+              like an absent question rather than an unanswered one. */}
+          <section className="dt-promo-states">
+            {promotion.states.map((state) => (
+              <article key={state.state} className={state.real_attained ? "real" : state.rehearsed_attained ? "rehearsed" : "pending"}>
+                <span>0{state.index + 1}</span>
+                <b>{label(state.state)}</b>
+                <i>{state.real_attained ? "Bank authorised" : state.rehearsed_attained ? "Rehearsed only" : "Not reached"}</i>
+              </article>
+            ))}
+          </section>
+
+          <section className="dt-panel dt-promo-gates">
+            <div className="dt-panel-head">
+              <div><p className="dt-kicker">Gate register · {promotion.catalogue_version}</p><h2>Every gate, both tracks, and what would make the real one pass</h2></div>
+              <div className="dt-promo-legend">{Object.entries(promotion.projection_legend).map(([key, meaning]) => <span key={key} className={`dt-proj dt-proj-${key}`} title={meaning}>{label(key)}</span>)}</div>
+            </div>
+            {promotion.transitions.map((transition) => (
+              <div key={transition.transition_id} className="dt-promo-transition">
+                <h3>{transition.transition_id.replace("__TO__", " → ").replace(/_/g, " ")}<small>{transition.blocking_gate_count} blocking of {transition.gate_count}</small></h3>
+                <table>
+                  <thead><tr><th>Gate</th><th>Sev</th><th>Real</th><th>Rehearsal</th><th>Evidence</th><th>Signature</th><th>Owner → approver</th><th>Injected</th></tr></thead>
+                  <tbody>
+                    {transition.gates.map((gate: PromotionGateRow) => (
+                      <tr key={gate.gate_id} className={openGateId === gate.gate_id ? "open" : ""} onClick={() => setOpenGateId(openGateId === gate.gate_id ? "" : gate.gate_id)}>
+                        <td><b>{gate.title}</b>{!gate.blocking && <em> · non-blocking</em>}
+                          {openGateId === gate.gate_id && (
+                            <div className="dt-promo-detail">
+                              <p><b>Requirement.</b> {gate.requirement}</p>
+                              <p><b>If it fails.</b> {gate.consequence_if_failed}</p>
+                              <p><b>What would make the real gate pass.</b> {gate.what_would_make_real_pass}</p>
+                              <p><b>Artifact.</b> <code>{gate.artifact_sha256 ? `${gate.artifact_sha256.slice(0, 16)}…` : "none"}</code> · needs at least {label(gate.minimum_real_evidence_mode)} · {gate.freshness_days ? `${gate.freshness_days}d freshness` : "no expiry"}</p>
+                            </div>
+                          )}
+                        </td>
+                        <td><Status tone={gate.severity === "CRITICAL" ? "blocked" : "neutral"}>{gate.severity}</Status></td>
+                        <td><span className={`dt-proj dt-proj-${gate.projection}`}>{gate.real_outcome === "NOT_EVALUATED" ? "—" : gate.real_outcome}</span></td>
+                        <td><span className={`dt-proj dt-proj-${gate.rehearsal_outcome === "PASS" ? "rehearsal-pass" : "waiting"}`}>{gate.rehearsal_outcome === "NOT_EVALUATED" ? "—" : gate.rehearsal_outcome}</span></td>
+                        <td>{gate.evidence_mode ? label(gate.evidence_mode) : "—"}</td>
+                        <td>{label(gate.signature_status)}{gate.trust_domain && <em> · {gate.trust_domain}</em>}</td>
+                        <td>{gate.owner_role.replace(/_/g, " ").toLowerCase()} → {gate.approver_role.replace(/_/g, " ").toLowerCase()}</td>
+                        <td>{gate.failure_injection_verified ? "✓" : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </section>
+
+          <section className="dt-promo-lower">
+            {/* Refusals are shown, not omitted. A register of what is allowed
+                cannot be audited for whether the right things are refused. */}
+            <article className="dt-panel">
+              <p className="dt-kicker">Capabilities</p>
+              <h2>What this system may be used for</h2>
+              {promotion.capabilities.map((item) => (
+                <div key={item.capability} className="dt-promo-cap">
+                  <Status tone={item.granted ? "ready" : "blocked"}>{item.granted ? "Granted" : "Refused"}</Status>
+                  <b>{label(item.capability)}</b>
+                  {item.refusal_reason && <em>{item.refusal_reason.replace(/_/g, " ").toLowerCase()}</em>}
+                </div>
+              ))}
+            </article>
+            <article className="dt-panel">
+              <p className="dt-kicker">Signing</p>
+              <h2>{promotion.signing.executed.length} of {promotion.signing.executed.length + promotion.signing.not_executed.length} signers exercised</h2>
+              <ul>
+                {promotion.signing.executed.map((item) => <li key={item}>✓ {item} — executed</li>)}
+                {promotion.signing.not_executed.map((item) => <li key={item}>— {item} — not executed here</li>)}
+              </ul>
+              <Status tone="blocked">{promotion.signing.real_bank_signing_available ? "REAL_BANK_SIGNING_AVAILABLE" : "NO_REAL_BANK_SIGNING_CAPABILITY"}</Status>
+              <p className="dt-promo-note">
+                {promotion.gates_without_failure_injection.length === 0
+                  ? `All ${promotion.transitions.reduce((sum, item) => sum + item.gate_count, 0)} gates have a positive case and a fail-closed negative case.`
+                  : `${promotion.gates_without_failure_injection.length} of ${promotion.transitions.reduce((sum, item) => sum + item.gate_count, 0)} gates still lack an injected-failure observation.`}
+              </p>
+            </article>
+          </section>
+        </main>
+      )}
+
       {view === "Governance" && (
         <main className="dt-main">
           <section className="dt-governance-hero"><div><p className="dt-kicker">Release truth</p><h1>Demo complete.<br /><em>Bank production fail-closed.</em></h1></div><div><Status tone="ready">{projection.release.client_demo_status}</Status><Status tone="blocked">{projection.release.bank_production_status}</Status></div></section>
           <section className="dt-governance-grid">
-            <article className="dt-panel"><p className="dt-kicker">Evidence integrity</p><h2>{projection.evidence_coverage.total_claims} typed claims</h2><ul><li>{projection.evidence_coverage.tier_counts.E1} E1 claims relinked and governed</li><li>{projection.evidence_coverage.approval_counts.PENDING_REVIEW} claims remain pending review</li><li>Every client meets ≥15 typed claims and ≥9 domains</li><li>All 20 clients remain below the stricter 15-approved-E1 target</li></ul><Status tone="blocked">{label(projection.evidence_coverage.e1_threshold_status)}</Status></article>
+            <article className="dt-panel"><p className="dt-kicker">Evidence integrity</p><h2>82 public source facts</h2><ul><li>31 facts approved; 51 await finance-SME review</li><li>{projection.evidence_coverage.total_claims} governed model / analytical claims derived under explicit lineage</li><li>{projection.evidence_coverage.tier_counts.E1} E1-linked claims; pending facts cannot activate anchors</li><li>Every client has a 12-domain schema; unsupported domains remain explicit</li></ul><Status tone="blocked">51 HUMAN APPROVALS OPEN</Status></article>
             <article className="dt-panel"><p className="dt-kicker">Interpretation contract</p><h2>Five labels never collapse</h2><ol><li><b>Observed</b> — Syn Bank simulation activity</li><li><b>Identified bound</b> — assumption-light set</li><li><b>Posterior</b> — model-based distribution</li><li><b>Scenario</b> — governed commercial assumption</li><li><b>Causal</b> — withheld until trial gates pass</li></ol><p>No opaque confidence score, measured competitor share or uplift claim is displayed.</p></article>
             <article className="dt-panel"><p className="dt-kicker">Domain event fabric</p><h2>{Object.values(projection.event_topics).reduce((sum, value) => sum + value, 0).toLocaleString()} immutable events</h2>{Object.entries(projection.event_topics).map(([topic, count]) => <div className="dt-topic" key={topic}><span>{topic.replace("wallet-twin.", "")}</span><b>{count}</b></div>)}</article>
             <article className="dt-panel"><p className="dt-kicker">Production target</p><h2>AWS + Databricks control plane</h2><div className="dt-stack"><span>Private EKS services</span><i>→</i><span>Delta + Unity Catalog</span><i>→</i><span>MLflow registry</span><i>→</i><span>Entitled workbench</span></div><p>Object Lock · MSK domain topics · OPA ABAC · row filters · OpenTelemetry · SIEM</p></article>
@@ -371,7 +523,7 @@ export default function Dashboard({ viewer, asOf, weekStart }: { viewer: string;
         </main>
       )}
 
-      <footer className="dt-footer"><span>Corporate Wallet Digital Twin V3.1.1</span><p>Hackathon submission surface · no automated pricing, credit, booking, CRM-stage change or customer communication</p><b>{projection.release.bank_production_status}</b></footer>
+      <footer className="dt-footer"><span>Corporate Wallet Digital Twin V3.2.0</span><p>Hackathon submission surface · no automated pricing, credit, booking, CRM-stage change or customer communication</p><b>{projection.release.bank_production_status}</b></footer>
     </div>
   );
 }

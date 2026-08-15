@@ -1,4 +1,4 @@
-# Corporate Wallet Digital Twin V3.1.1 — safe public mirror
+# Corporate Wallet Digital Twin V3.2.0 — safe public mirror
 
 This clean-history mirror contains the production-shaped source, contracts,
 tests and infrastructure definitions, but it runs only on an independently
@@ -17,5 +17,7 @@ uv sync --frozen --all-extras
 uv run python scripts/build_safe_demo.py
 ```
 
-The command rebuilds the V2/V3/V3.1 schemas and anonymous workbench fixtures,
-runs the safe-demo tests, and checks the mirror manifest.
+The command rebuilds the V2/V3/V3.1/V3.2 schemas, anonymous workbench fixtures
+and synthetic-only Promotion Twin, runs the safe-demo tests, and checks the
+mirror manifest. Promotion evidence remains rehearsal-only and cannot authorize
+bank use.

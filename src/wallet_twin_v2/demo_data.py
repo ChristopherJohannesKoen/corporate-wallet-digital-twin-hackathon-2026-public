@@ -299,7 +299,7 @@ def build_client_demo_data(
         "status": "CLIENT_DEMO_DATA_READY",
         "watermark": CLIENT_DEMO_WATERMARK,
         "source_estate": {
-            "synbank_rows": 3064295,
+            "synbank_rows": 0,
             "audited_public_e1_facts": 82,
             "representative_trade_finance_rows": 10000,
             "remote_federated_transaction_rows": 6362620,
