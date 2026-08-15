@@ -1,0 +1,29 @@
+{
+  "version": "3.2.0-safe",
+  "as_of": "2026-06-30",
+  "genai": {
+    "evaluation_scope": "SAFE_PUBLIC_MIRROR_NOT_EXECUTED",
+    "target_runs": 0,
+    "runs": 0,
+    "accepted_runs": 0,
+    "blocked_runs": 0,
+    "submission_gate_passed": false,
+    "accepted_providers": [],
+    "accepted_clients": [],
+    "showcase_briefs": {},
+    "blocked_evaluations": [],
+    "bank_authorized_live_genai": false,
+    "claim_boundary": "No provider evaluation or named-client pack is published in the safe mirror."
+  },
+  "promotion": {
+    "real_state": "OFFLINE_CANDIDATE",
+    "rehearsed_state": "SHADOW_READY",
+    "package_status": "SHADOW_DEPLOYMENT_PACKAGE_READY",
+    "promotion_machinery_readiness": 1.0,
+    "bank_evidence_readiness": 0.0,
+    "bank_shadow_authorized": false,
+    "bank_production_status": "NOT_PROMOTABLE",
+    "shadow_rehearsal_days": 30,
+    "elapsed_bank_shadow_days": 0
+  }
+}

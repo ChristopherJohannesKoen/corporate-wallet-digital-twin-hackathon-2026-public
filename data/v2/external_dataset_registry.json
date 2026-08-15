@@ -4,7 +4,7 @@
   "policy": {
     "production_e3_requires_direct_multibank_observation": true,
     "representative_data_may_not_be_labelled_measured_share": true,
-    "client_demo_watermark": "CLIENT DEMONSTRATION — SIMULATED/REPRESENTATIVE DATA — NOT FOR FINANCIAL DECISIONS",
+    "client_demo_watermark": "CLIENT DEMONSTRATION \u2014 SIMULATED/REPRESENTATIVE DATA \u2014 NOT FOR FINANCIAL DECISIONS",
     "permitted_demo_uses": [
       "model mechanics validation",
       "scenario stress testing",
@@ -14,20 +14,6 @@
     ]
   },
   "datasets": [
-    {
-      "dataset_id": "synbank-supplied-banking-data",
-      "provider": "Hackathon supplied data pack",
-      "source_uri": "ref/Data Sets/Data.zip",
-      "revision": "sha256:21f0ed75da260b87abfd17df30f210dd91345068672f8fcf49df1760f2b2df87",
-      "license": "Hackathon terms and supplied-data conditions",
-      "classification": "SYNTHETIC_SIMULATION",
-      "usage_class": "CLIENT_DEMO_AND_VALIDATION",
-      "contains_personal_data": false,
-      "row_count": 3064295,
-      "production_e3_eligible": false,
-      "local_snapshot": "ref/Data Sets/Data.zip",
-      "purpose": "Focal-bank activity, data quality, seasonality and service-contract rehearsal"
-    },
     {
       "dataset_id": "corporate-public-evidence-register",
       "provider": "Official issuer reports",
@@ -93,5 +79,6 @@
       },
       "purpose": "Financial-report numerical-reasoning test design; not a source of client facts"
     }
-  ]
+  ],
+  "public_mirror_boundary": "The supplied hackathon archive and every challenge-derived aggregate are intentionally absent from this clean public mirror."
 }
